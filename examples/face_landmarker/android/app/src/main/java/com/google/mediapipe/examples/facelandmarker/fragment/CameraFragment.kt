@@ -328,39 +328,40 @@ class CameraFragment : Fragment(), FaceLandmarkerHelper.LandmarkerListener {
     // Declare and bind preview, capture and analysis use cases
     @SuppressLint("UnsafeOptInUsageError")
     private fun bindCameraUseCases() {
+        val cameraProvider = cameraProvider ?: throw IllegalStateException("Camera initialization failed.")
 
-        // CameraProvider
-        val cameraProvider = cameraProvider
-            ?: throw IllegalStateException("Camera initialization failed.")
+        // Log available cameras (for debugging)
+        val availableCameras = cameraProvider.availableCameraInfos.toList()
+        Log.d(TAG, "Available Cameras Count: ${availableCameras.size}")
 
-        val cameraSelector =
-            CameraSelector.Builder().requireLensFacing(cameraFacing).build()
+        availableCameras.forEachIndexed { index, cameraInfo ->
+            Log.d(TAG, "Camera $index: $cameraInfo")
+        }
 
-        // Preview. Only using the 4:3 ratio because this is the closest to our models
-        preview = Preview.Builder().setTargetAspectRatio(AspectRatio.RATIO_4_3)
+        // If only one camera is available, use it without checking front/back
+        val cameraSelector = CameraSelector.Builder().build()
+
+        preview = Preview.Builder()
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .setTargetRotation(fragmentCameraBinding.viewFinder.display.rotation)
             .build()
 
-        // ImageAnalysis. Using RGBA 8888 to match how our models work
-        imageAnalyzer =
-            ImageAnalysis.Builder().setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(fragmentCameraBinding.viewFinder.display.rotation)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .build()
-                // The analyzer can then be assigned to the instance
-                .also {
-                    it.setAnalyzer(backgroundExecutor) { image ->
-                        detectFace(image)
-                    }
+        imageAnalyzer = ImageAnalysis.Builder()
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .setTargetRotation(fragmentCameraBinding.viewFinder.display.rotation)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+            .build()
+            .also {
+                it.setAnalyzer(backgroundExecutor) { image ->
+                    detectFace(image)
                 }
+            }
 
-        // Must unbind the use-cases before rebinding them
+        // Unbind before rebinding
         cameraProvider.unbindAll()
 
         try {
-            // A variable number of use-cases can be passed here -
-            // camera provides access to CameraControl & CameraInfo
             camera = cameraProvider.bindToLifecycle(
                 this, cameraSelector, preview, imageAnalyzer
             )
@@ -368,9 +369,11 @@ class CameraFragment : Fragment(), FaceLandmarkerHelper.LandmarkerListener {
             // Attach the viewfinder's surface provider to preview use case
             preview?.setSurfaceProvider(fragmentCameraBinding.viewFinder.surfaceProvider)
         } catch (exc: Exception) {
-            Log.e(TAG, "Use case binding failed", exc)
+            Log.e(TAG, "Camera binding failed: ${exc.message}", exc)
+            Toast.makeText(requireContext(), "Failed to open camera", Toast.LENGTH_LONG).show()
         }
     }
+
 
     private fun detectFace(imageProxy: ImageProxy) {
         faceLandmarkerHelper.detectLiveStream(
