@@ -164,7 +164,7 @@ class FaceLandmarkerHelper(
         val currentTime = SystemClock.uptimeMillis()
 
         // Define thresholds for detecting sleep
-        val eyeClosedThreshold = 0.2f  // Eyes almost fully closed
+        val eyeClosedThreshold = 0.6f  // Eyes almost fully closed
         val jawRelaxThreshold = 0.5f  // Jaw is slack (drowsy state)
         val headTiltThreshold = 0.05f  // Chin lower than usual
 
@@ -185,7 +185,10 @@ class FaceLandmarkerHelper(
             }
         } else {
             sleepStartTime = null
-            isSleeping = false
+            if (isSleeping) {
+                isSleeping = false  // Wake up detected
+                showToast("Awake - Movement Detection Resumed")
+            }
         }
     }
 
@@ -404,6 +407,7 @@ class FaceLandmarkerHelper(
         leftEyeY: Float, rightEyeY: Float,
         jawY: Float, chinY: Float
     ) {
+        if (isSleeping) return
         val currentTime = SystemClock.uptimeMillis()
 
         // Limit alerts to every 3 seconds
@@ -431,10 +435,10 @@ class FaceLandmarkerHelper(
             val headTiltDown = (chinY - jawY) > chinThreshold
 
             val movementDirection = when {
-                movingRight -> "Moving RIGHT"
-                movingLeft -> "Moving LEFT"
-                movingUp -> "Moving UP"
-                movingDown -> "Moving DOWN"
+                movingRight -> "RIGHT MOVEMENT"
+                movingLeft -> "LEFT MOVEMENT"
+                movingUp -> "UP"
+                movingDown -> "DOWN"
                 headTiltLeft -> "HEAD TILTED LEFT"
                 headTiltRight -> "HEAD TILTED RIGHT"
                 headTiltUp -> "HEAD TILTED UP"
@@ -478,7 +482,7 @@ class FaceLandmarkerHelper(
             val chinY = jaw.y()
 
             // Detect Movement & Tilts
-            detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
+//            detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
 
             // Extract Blendshape Expressions
             val blendshapes = result.faceBlendshapes()
@@ -491,6 +495,9 @@ class FaceLandmarkerHelper(
                 val jawOpen = categories.find { it.categoryName() == "jawOpen" }?.score() ?: 0f
                 Log.d(TAG, "--------------------: ")
                 detectSleep(eyeBlinkLeft, eyeBlinkRight, jawOpen, chinY, jawY)
+                if (!isSleeping) {
+                    detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
+                }
             }
 
             faceLandmarkerHelperListener?.onResults(

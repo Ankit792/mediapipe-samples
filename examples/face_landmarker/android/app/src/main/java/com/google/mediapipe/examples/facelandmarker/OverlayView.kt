@@ -105,7 +105,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         faceLandmarks.forEach { landmark ->
             val x = landmark.x() * imageWidth * scaleFactor + offsetX
             val y = landmark.y() * imageHeight * scaleFactor + offsetY
-            canvas.drawCircle(x, y, 5f, pointPaint)
+            canvas.drawCircle(x, y, 3f, pointPaint)
         }
     }
 
@@ -160,7 +160,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
     }
 
     companion object {
-        private const val LANDMARK_STROKE_WIDTH = 8F
+        private const val LANDMARK_STROKE_WIDTH = 5F
         private const val TAG = "Face Landmarker Overlay"
     }
 }
