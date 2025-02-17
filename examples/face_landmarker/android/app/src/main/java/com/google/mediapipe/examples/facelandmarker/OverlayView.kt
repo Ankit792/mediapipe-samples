@@ -105,7 +105,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         faceLandmarks.forEach { landmark ->
             val x = landmark.x() * imageWidth * scaleFactor + offsetX
             val y = landmark.y() * imageHeight * scaleFactor + offsetY
-            canvas.drawPoint(x, y, pointPaint)
+            canvas.drawCircle(x, y, 5f, pointPaint)
         }
     }
 

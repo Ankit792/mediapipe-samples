@@ -45,7 +45,7 @@
         android:paddingHorizontal="@dimen/bottom_sheet_padding"
         app:layout_anchor="@id/bottom_sheet_layout"
         app:layout_anchorGravity="top"
-        android:visibility="visible"
+        android:visibility="gone"
         app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior" />
 
     <View
