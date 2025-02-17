@@ -360,132 +360,94 @@ class FaceLandmarkerHelper(
 
     private fun detectFaceMovement(
         noseX: Float, noseY: Float,
-        leftEyeX: Float, rightEyeX: Float,
-        leftCheekX: Float, rightCheekX: Float,
-        jawX: Float, chinY: Float,
-        eyeSquintLeft: Float, eyeSquintRight: Float,
-        cheekSquintLeft: Float, cheekSquintRight: Float,
-        jawLeft: Float, jawRight: Float
+        leftEyeY: Float, rightEyeY: Float,
+        jawY: Float, chinY: Float
     ) {
         val currentTime = SystemClock.uptimeMillis()
 
-        // Ignore minor movements using velocity filtering
+        // Limit alerts to every 3 seconds
         if (currentTime - lastToastTime < 3000) return
 
         if (previousNoseX != null && previousNoseY != null) {
             val deltaX = noseX - previousNoseX!!
             val deltaY = noseY - previousNoseY!!
 
-            // Set movement thresholds dynamically
-            val movementThreshold = 0.03f  // Increased threshold to reduce false positives
-            val jawThreshold = 0.3f  // Jaw movements are less sensitive
-            val eyeThreshold = 0.4f  // Expression sensitivity
+            // Adjusted Sensitivity Thresholds
+            val movementThreshold = 0.03f  // Reduce false movement alerts
+            val tiltThreshold = 0.02f  // Detect subtle tilts
+            val chinThreshold = 0.02f  // Adjust vertical head tilts
 
-            // Calculate overall movement based on multiple factors
-            val movingRight = deltaX > movementThreshold || jawRight > jawThreshold || cheekSquintRight > eyeThreshold
-            val movingLeft = deltaX < -movementThreshold || jawLeft > jawThreshold || cheekSquintLeft > eyeThreshold
-            val movingUp = deltaY < -movementThreshold || (eyeSquintLeft > eyeThreshold && eyeSquintRight > eyeThreshold)
+            // Detect Left/Right Movement
+            val movingRight = deltaX > movementThreshold
+            val movingLeft = deltaX < -movementThreshold
+            val movingUp = deltaY < -movementThreshold
             val movingDown = deltaY > movementThreshold
+
+            // Detect Tilted Head
+            val headTiltLeft = (leftEyeY - rightEyeY) > tiltThreshold
+            val headTiltRight = (rightEyeY - leftEyeY) > tiltThreshold
+            val headTiltUp = (jawY - chinY) > chinThreshold
+            val headTiltDown = (chinY - jawY) > chinThreshold
 
             val movementDirection = when {
                 movingRight -> "Moving RIGHT"
                 movingLeft -> "Moving LEFT"
                 movingUp -> "Moving UP"
                 movingDown -> "Moving DOWN"
+                headTiltLeft -> "HEAD TILTED LEFT"
+                headTiltRight -> "HEAD TILTED RIGHT"
+                headTiltUp -> "HEAD TILTED UP"
+                headTiltDown -> "HEAD TILTED DOWN"
                 else -> null
             }
 
-            // Prevent repetitive message and sounds by ensuring direction change
             if (movementDirection != null && movementDirection != lastDirection) {
                 showToast(movementDirection)
-                lastToastTime = currentTime
-                lastDirection = movementDirection
                 playSound()
                 lastToastTime = currentTime
                 lastDirection = movementDirection
             }
         }
 
-        // Update previous nose position
+        // Update previous position for stability
         previousNoseX = noseX
         previousNoseY = noseY
     }
 
 
+
+
     // Return the landmark result to this FaceLandmarkerHelper's caller
-    private fun returnLivestreamResult(
-        result: FaceLandmarkerResult,
-        input: MPImage
-    ) {
+    private fun returnLivestreamResult(result: FaceLandmarkerResult, input: MPImage) {
         if (result.faceLandmarks().isNotEmpty()) {
-            val finishTimeMs = SystemClock.uptimeMillis()
-            val inferenceTime = finishTimeMs - result.timestampMs()
-
             val faceLandmarks = result.faceLandmarks()[0]
-//            for ((index, landmark) in faceLandmarks.withIndex()) {
-//                Log.d("LANDMARK_DEBUG", "Index: $index, X: ${landmark.x()}, Y: ${landmark.y()}")
-//            }
 
-            // Improved key facial points
+            // Extract Correct Key Points
             val nose = faceLandmarks[1]  // Nose tip
-            val leftEye = faceLandmarks[33]  // Left eye outer corner
-            val rightEye = faceLandmarks[263] // Right eye outer corner
-            val leftCheek = faceLandmarks[234] // Left cheek
-            val rightCheek = faceLandmarks[454] // Right cheek
+            val leftEye = faceLandmarks[33]  // Left eye outer
+            val rightEye = faceLandmarks[263] // Right eye outer
             val jaw = faceLandmarks[152] // Chin
 
-            // Extract positions
+            // Get Position Values
             val noseX = nose.x()
             val noseY = nose.y()
-            val leftEyeX = leftEye.x()
-            val rightEyeX = rightEye.x()
-            val leftCheekX = leftCheek.x()
-            val rightCheekX = rightCheek.x()
-            val jawX = jaw.x()
+            val leftEyeY = leftEye.y()
+            val rightEyeY = rightEye.y()
+            val jawY = jaw.y()
             val chinY = jaw.y()
 
-//            Log.d("FaceLandmark", "Nose: (${nose.x()}, ${nose.y()})")
-//            Log.d("FaceLandmark", "Left Eye: (${leftEye.x()}, ${leftEye.y()})")
-//            Log.d("FaceLandmark", "Right Eye: (${rightEye.x()}, ${rightEye.y()})")
-//            Log.d("FaceLandmark", "Left Cheek: (${leftCheek.x()}, ${leftCheek.y()})")
-//            Log.d("FaceLandmark", "Right Cheek: (${rightCheek.x()}, ${rightCheek.y()})")
-//            Log.d("FaceLandmark", "Jaw Left: (${jaw.x()}, ${jaw.y()})")
-
-            // Extract blendshape expressions
-            val blendshapes = result.faceBlendshapes()
-            if (blendshapes.isPresent) {
-                val categories = blendshapes.get()[0]
-
-                val eyeSquintLeft = categories.find { it.categoryName() == "eyeSquintLeft" }?.score() ?: 0f
-                val eyeSquintRight = categories.find { it.categoryName() == "eyeSquintRight" }?.score() ?: 0f
-                val cheekSquintLeft = categories.find { it.categoryName() == "cheekSquintLeft" }?.score() ?: 0f
-                val cheekSquintRight = categories.find { it.categoryName() == "cheekSquintRight" }?.score() ?: 0f
-                val jawLeft = categories.find { it.categoryName() == "jawLeft" }?.score() ?: 0f
-                val jawRight = categories.find { it.categoryName() == "jawRight" }?.score() ?: 0f
-
-                detectFaceMovement(
-                    noseX, noseY,
-                    leftEyeX, rightEyeX,
-                    leftCheekX, rightCheekX,
-                    jawX, chinY,
-                    eyeSquintLeft, eyeSquintRight,
-                    cheekSquintLeft, cheekSquintRight,
-                    jawLeft, jawRight
-                )
-            }
+            // Detect Movement & Tilts
+            detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
 
             faceLandmarkerHelperListener?.onResults(
-                ResultBundle(
-                    result,
-                    inferenceTime,
-                    input.height,
-                    input.width
-                )
+                ResultBundle(result, SystemClock.uptimeMillis() - result.timestampMs(), input.height, input.width)
             )
         } else {
             faceLandmarkerHelperListener?.onEmpty()
         }
     }
+
+
 
 
     // Return errors thrown during detection to this FaceLandmarkerHelper's
