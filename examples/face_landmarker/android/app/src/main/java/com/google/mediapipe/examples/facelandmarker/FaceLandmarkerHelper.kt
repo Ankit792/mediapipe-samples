@@ -56,6 +56,8 @@ class FaceLandmarkerHelper(
     private var lastToastTime: Long = 0 // Track last Toast time
     private var lastDirection: String? = null // Track last movement direction
     private var mediaPlayer: MediaPlayer? = null
+    private var sleepStartTime: Long? = null
+    private var isSleeping = false
 
     init {
         setupFaceLandmarker()
@@ -152,6 +154,38 @@ class FaceLandmarkerHelper(
                 TAG,
                 "Face Landmarker failed to load model with error: " + e.message
             )
+        }
+    }
+
+    private fun detectSleep(
+        eyeBlinkLeft: Float, eyeBlinkRight: Float,
+        jawOpen: Float, chinY: Float, jawY: Float
+    ) {
+        val currentTime = SystemClock.uptimeMillis()
+
+        // Define thresholds for detecting sleep
+        val eyeClosedThreshold = 0.2f  // Eyes almost fully closed
+        val jawRelaxThreshold = 0.5f  // Jaw is slack (drowsy state)
+        val headTiltThreshold = 0.05f  // Chin lower than usual
+
+        // Conditions for sleep detection
+        val eyesClosed = eyeBlinkLeft > eyeClosedThreshold && eyeBlinkRight > eyeClosedThreshold
+        val jawRelaxed = jawOpen > jawRelaxThreshold
+        val headTiltDown = chinY - jawY > headTiltThreshold
+
+        if (eyesClosed) {
+            if (sleepStartTime == null) {
+                sleepStartTime = currentTime  // Start sleep timer
+            } else if (currentTime - sleepStartTime!! > 3000) {  // 5 seconds threshold
+                if (!isSleeping) {
+                    isSleeping = true
+                    showToast("Sleep Detected! Wake Up!")
+                    playSleepAlarm()
+                }
+            }
+        } else {
+            sleepStartTime = null
+            isSleeping = false
         }
     }
 
@@ -347,14 +381,21 @@ class FaceLandmarkerHelper(
         // Release the previous instance to avoid playback issues
         mediaPlayer?.release()
         mediaPlayer = null
-
         // Create new MediaPlayer instance
         mediaPlayer = MediaPlayer.create(context, R.raw.beep)
-
         mediaPlayer?.setOnCompletionListener {
             it.release()  // Release MediaPlayer when done
         }
+        mediaPlayer?.start()
+    }
 
+    private fun playSleepAlarm() {
+        mediaPlayer?.release()
+        mediaPlayer = null
+        mediaPlayer = MediaPlayer.create(context, R.raw.test)  // Use a loud alarm sound
+        mediaPlayer?.setOnCompletionListener {
+            it.release()
+        }
         mediaPlayer?.start()
     }
 
@@ -438,6 +479,19 @@ class FaceLandmarkerHelper(
 
             // Detect Movement & Tilts
             detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
+
+            // Extract Blendshape Expressions
+            val blendshapes = result.faceBlendshapes()
+            if (blendshapes.isPresent) {
+                val categories = blendshapes.get()[0]
+
+                // Extract eye blink & jaw open scores
+                val eyeBlinkLeft = categories.find { it.categoryName() == "eyeBlinkLeft" }?.score() ?: 0f
+                val eyeBlinkRight = categories.find { it.categoryName() == "eyeBlinkRight" }?.score() ?: 0f
+                val jawOpen = categories.find { it.categoryName() == "jawOpen" }?.score() ?: 0f
+                Log.d(TAG, "--------------------: ")
+                detectSleep(eyeBlinkLeft, eyeBlinkRight, jawOpen, chinY, jawY)
+            }
 
             faceLandmarkerHelperListener?.onResults(
                 ResultBundle(result, SystemClock.uptimeMillis() - result.timestampMs(), input.height, input.width)

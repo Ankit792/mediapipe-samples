@@ -55,6 +55,7 @@
             android:id="@+id/navigation"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:visibility="invisible"
             app:itemIconTint="@color/bg_nav_item"
             app:itemTextColor="@color/bg_nav_item"
             app:menu="@menu/menu_bottom_nav" />
