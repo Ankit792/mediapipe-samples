@@ -31,6 +31,9 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import android.media.MediaPlayer
 
 class FaceLandmarkerHelper(
     var minFaceDetectionConfidence: Float = DEFAULT_FACE_DETECTION_CONFIDENCE,
@@ -42,11 +45,17 @@ class FaceLandmarkerHelper(
     val context: Context,
     // this listener is only used when running in RunningMode.LIVE_STREAM
     val faceLandmarkerHelperListener: LandmarkerListener? = null
+
 ) {
 
     // For this example this needs to be a var so it can be reset on changes.
     // If the Face Landmarker will not change, a lazy val would be preferable.
     private var faceLandmarker: FaceLandmarker? = null
+    private var previousNoseX: Float? = null
+    private var previousNoseY: Float? = null
+    private var lastToastTime: Long = 0 // Track last Toast time
+    private var lastDirection: String? = null // Track last movement direction
+    private var mediaPlayer: MediaPlayer? = null
 
     init {
         setupFaceLandmarker()
@@ -55,6 +64,9 @@ class FaceLandmarkerHelper(
     fun clearFaceLandmarker() {
         faceLandmarker?.close()
         faceLandmarker = null
+
+        mediaPlayer?.release()
+        mediaPlayer = null
     }
 
     // Return running status of FaceLandmarkerHelper
@@ -150,13 +162,12 @@ class FaceLandmarkerHelper(
     ) {
         if (runningMode != RunningMode.LIVE_STREAM) {
             throw IllegalArgumentException(
-                "Attempting to call detectLiveStream" +
-                        " while not using RunningMode.LIVE_STREAM"
+                "Attempting to call detectLiveStream while not using RunningMode.LIVE_STREAM"
             )
         }
         val frameTime = SystemClock.uptimeMillis()
 
-        // Copy out RGB bits from the frame to a bitmap buffer
+        // Copy RGB bits from the frame into a bitmap buffer
         val bitmapBuffer =
             Bitmap.createBitmap(
                 imageProxy.width,
@@ -166,30 +177,27 @@ class FaceLandmarkerHelper(
         imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
         imageProxy.close()
 
+        // Fix rotation based on camera source
         val matrix = Matrix().apply {
-            // Rotate the frame received from the camera to be in the same direction as it'll be shown
+            // Rotate the image to match screen orientation
             postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
 
-            // flip image if user use front camera
+            // Mirror the image if using the front camera
             if (isFrontCamera) {
-                postScale(
-                    -1f,
-                    1f,
-                    imageProxy.width.toFloat(),
-                    imageProxy.height.toFloat()
-                )
+                postScale(-1f, 1f, imageProxy.width / 2f, imageProxy.height / 2f)
             }
         }
+
         val rotatedBitmap = Bitmap.createBitmap(
-            bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height,
-            matrix, true
+            bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
         )
 
-        // Convert the input Bitmap object to an MPImage object to run inference
+        // Convert the rotated Bitmap to MPImage for processing
         val mpImage = BitmapImageBuilder(rotatedBitmap).build()
 
         detectAsync(mpImage, frameTime)
     }
+
 
     // Run face face landmark using MediaPipe Face Landmarker API
     @VisibleForTesting
@@ -313,6 +321,7 @@ class FaceLandmarkerHelper(
         faceLandmarker?.detect(mpImage)?.also { landmarkResult ->
             val inferenceTimeMs = SystemClock.uptimeMillis() - startTime
             return ResultBundle(
+
                 landmarkResult,
                 inferenceTimeMs,
                 image.height,
@@ -328,14 +337,122 @@ class FaceLandmarkerHelper(
         return null
     }
 
+    private fun showToast(message: String) {
+        (context as? AppCompatActivity)?.runOnUiThread {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun playSound() {
+        // Release the previous instance to avoid playback issues
+        mediaPlayer?.release()
+        mediaPlayer = null
+
+        // Create new MediaPlayer instance
+        mediaPlayer = MediaPlayer.create(context, R.raw.beep)
+
+        mediaPlayer?.setOnCompletionListener {
+            it.release()  // Release MediaPlayer when done
+        }
+
+        mediaPlayer?.start()
+    }
+
+    private fun detectFaceMovement(
+        noseX: Float, noseY: Float,
+        leftEyeX: Float, rightEyeX: Float,
+        leftCheekX: Float, rightCheekX: Float,
+        eyeSquintLeft: Float, eyeSquintRight: Float,
+        cheekSquintLeft: Float, cheekSquintRight: Float,
+        noseSneerLeft: Float, noseSneerRight: Float
+    ) {
+        val currentTime = SystemClock.uptimeMillis()
+
+        // Limit toast frequency to every 2.5 seconds
+        if (currentTime - lastToastTime < 25.00) return
+
+        if (previousNoseX != null && previousNoseY != null) {
+            val deltaX = noseX - previousNoseX!!
+            val deltaY = noseY - previousNoseY!!
+
+            val movementThreshold = 0.02f  // Adjust sensitivity for nose movement
+            val expressionThreshold = 0.4f // Threshold for blendshape expressions
+
+            // Calculate overall movement based on multiple factors
+            val movingRight = deltaX > movementThreshold || noseSneerRight > expressionThreshold || cheekSquintRight > expressionThreshold
+            val movingLeft = deltaX < -movementThreshold || noseSneerLeft > expressionThreshold || cheekSquintLeft > expressionThreshold
+            val movingUp = deltaY < -movementThreshold || (eyeSquintLeft > expressionThreshold && eyeSquintRight > expressionThreshold)
+            val movingDown = deltaY > movementThreshold
+
+            val movementDirection = when {
+                movingRight -> "Moving RIGHT"
+                movingLeft -> "Moving LEFT"
+                movingUp -> "Moving UP"
+                movingDown -> "Moving DOWN"
+                else -> null
+            }
+
+            // Only show the toast if movement direction is different from the last one
+            if (movementDirection != null && movementDirection != lastDirection) {
+                showToast(movementDirection)
+                lastToastTime = currentTime
+                lastDirection = movementDirection
+                playSound()
+                lastToastTime = currentTime
+                lastDirection = movementDirection
+            }
+        }
+
+        // Update previous nose position
+        previousNoseX = noseX
+        previousNoseY = noseY
+    }
+
     // Return the landmark result to this FaceLandmarkerHelper's caller
     private fun returnLivestreamResult(
         result: FaceLandmarkerResult,
         input: MPImage
     ) {
-        if( result.faceLandmarks().size > 0 ) {
+        if (result.faceLandmarks().isNotEmpty()) {
             val finishTimeMs = SystemClock.uptimeMillis()
             val inferenceTime = finishTimeMs - result.timestampMs()
+
+            val faceLandmarks = result.faceLandmarks()[0]
+
+            // Key facial points for movement detection
+            val nose = faceLandmarks[1]   // Nose tip
+            val leftEye = faceLandmarks[33]  // Left eye (outer corner)
+            val rightEye = faceLandmarks[263] // Right eye (outer corner)
+            val leftCheek = faceLandmarks[234] // Left cheek
+            val rightCheek = faceLandmarks[454] // Right cheek
+
+            // Extract landmark positions
+            val noseX = nose.x()
+            val noseY = nose.y()
+            val leftEyeX = leftEye.x()
+            val rightEyeX = rightEye.x()
+            val leftCheekX = leftCheek.x()
+            val rightCheekX = rightCheek.x()
+
+            // Ensure blendshapes exist
+            val blendshapes = result.faceBlendshapes()
+            if (blendshapes.isPresent) {
+                val categories = blendshapes.get()[0] // Get first face blendshapes
+
+                // Extract relevant expressions
+                val eyeSquintLeft = categories.find { it.categoryName() == "eyeSquintLeft" }?.score() ?: 0f
+                val eyeSquintRight = categories.find { it.categoryName() == "eyeSquintRight" }?.score() ?: 0f
+                val cheekSquintLeft = categories.find { it.categoryName() == "cheekSquintLeft" }?.score() ?: 0f
+                val cheekSquintRight = categories.find { it.categoryName() == "cheekSquintRight" }?.score() ?: 0f
+                val noseSneerLeft = categories.find { it.categoryName() == "noseSneerLeft" }?.score() ?: 0f
+                val noseSneerRight = categories.find { it.categoryName() == "noseSneerRight" }?.score() ?: 0f
+
+                detectFaceMovement(
+                    noseX, noseY,
+                    leftEyeX, rightEyeX, leftCheekX, rightCheekX,
+                    eyeSquintLeft, eyeSquintRight, cheekSquintLeft, cheekSquintRight, noseSneerLeft, noseSneerRight
+                )
+            }
 
             faceLandmarkerHelperListener?.onResults(
                 ResultBundle(
@@ -345,11 +462,11 @@ class FaceLandmarkerHelper(
                     input.width
                 )
             )
-        }
-        else {
+        } else {
             faceLandmarkerHelperListener?.onEmpty()
         }
     }
+
 
     // Return errors thrown during detection to this FaceLandmarkerHelper's
     // caller
@@ -389,8 +506,7 @@ class FaceLandmarkerHelper(
 
     interface LandmarkerListener {
         fun onError(error: String, errorCode: Int = OTHER_ERROR)
-        fun onResults(resultBundle: ResultBundle)
-
+        fun onResults(resultBundle: FaceLandmarkerHelper.ResultBundle)
         fun onEmpty() {}
     }
 }
