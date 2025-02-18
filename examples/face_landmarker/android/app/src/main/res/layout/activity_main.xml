@@ -31,7 +31,6 @@
             android:name="androidx.navigation.fragment.NavHostFragment"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginTop="?android:attr/actionBarSize"
             android:background="@android:color/transparent"
             android:keepScreenOn="true"
             app:defaultNavHost="true"
@@ -53,9 +52,9 @@
 
         <com.google.android.material.bottomnavigation.BottomNavigationView
             android:id="@+id/navigation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:visibility="visible"
+            android:layout_width="399dp"
+            android:layout_height="0dp"
+            android:visibility="invisible"
             app:itemIconTint="@color/bg_nav_item"
             app:itemTextColor="@color/bg_nav_item"
             app:menu="@menu/menu_bottom_nav" />

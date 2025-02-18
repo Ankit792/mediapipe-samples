@@ -418,21 +418,24 @@ class FaceLandmarkerHelper(
             val deltaY = noseY - previousNoseY!!
 
             // Adjusted Sensitivity Thresholds
-            val movementThreshold = 0.03f  // Reduce false movement alerts
-            val tiltThreshold = 0.02f  // Detect subtle tilts
-            val chinThreshold = 0.02f  // Adjust vertical head tilts
+            val movementThreshold = 0.04f  // Reduced false alerts
+            val tiltThreshold = 0.03f  // To detect tilts
+            val chinThreshold = 0.025f  // Head tilt vertical sensitivity
 
-            // Detect Left/Right Movement
-            val movingRight = deltaX > movementThreshold
-            val movingLeft = deltaX < -movementThreshold
-            val movingUp = deltaY < -movementThreshold
-            val movingDown = deltaY > movementThreshold
-
-            // Detect Tilted Head
+            // Detect Head Tilt
             val headTiltLeft = (leftEyeY - rightEyeY) > tiltThreshold
             val headTiltRight = (rightEyeY - leftEyeY) > tiltThreshold
             val headTiltUp = (jawY - chinY) > chinThreshold
             val headTiltDown = (chinY - jawY) > chinThreshold
+
+            // Prevent False Up/Down Alarms due to Head Tilting
+            val ignoreUpDown = headTiltUp || headTiltDown
+
+            // Detect Actual Movement (Ignoring Head Tilts)
+            val movingRight = deltaX > movementThreshold
+            val movingLeft = deltaX < -movementThreshold
+            val movingUp = !ignoreUpDown && deltaY < -movementThreshold
+            val movingDown = !ignoreUpDown && deltaY > movementThreshold
 
             val movementDirection = when {
                 movingRight -> "RIGHT MOVEMENT"
@@ -454,13 +457,10 @@ class FaceLandmarkerHelper(
             }
         }
 
-        // Update previous position for stability
+        // Update previous nose position for better tracking
         previousNoseX = noseX
         previousNoseY = noseY
     }
-
-
-
 
     // Return the landmark result to this FaceLandmarkerHelper's caller
     private fun returnLivestreamResult(result: FaceLandmarkerResult, input: MPImage) {
@@ -481,10 +481,7 @@ class FaceLandmarkerHelper(
             val jawY = jaw.y()
             val chinY = jaw.y()
 
-            // Detect Movement & Tilts
-//            detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
-
-            // Extract Blendshape Expressions
+            // Extract Blendshapes (for sleep detection)
             val blendshapes = result.faceBlendshapes()
             if (blendshapes.isPresent) {
                 val categories = blendshapes.get()[0]
@@ -493,8 +490,11 @@ class FaceLandmarkerHelper(
                 val eyeBlinkLeft = categories.find { it.categoryName() == "eyeBlinkLeft" }?.score() ?: 0f
                 val eyeBlinkRight = categories.find { it.categoryName() == "eyeBlinkRight" }?.score() ?: 0f
                 val jawOpen = categories.find { it.categoryName() == "jawOpen" }?.score() ?: 0f
-                Log.d(TAG, "--------------------: ")
+
+                // Detect Sleep
                 detectSleep(eyeBlinkLeft, eyeBlinkRight, jawOpen, chinY, jawY)
+
+                // Detect Face Movement (Only if Not Sleeping)
                 if (!isSleeping) {
                     detectFaceMovement(noseX, noseY, leftEyeY, rightEyeY, jawY, chinY)
                 }
